@@ -1,3 +1,11 @@
-from django.shortcuts import render
+from rest_framework import viewsets
+from rest_framework.views import APIView, status
 
-# Create your views here.
+from .models import Operator
+from .serializers import OperatorSerializer
+
+
+class OperatorViewSet(viewsets.ModelViewSet):
+    queryset = Operator.objects.all()
+    serializer_class = OperatorSerializer
+    lookup_field = 'pk'
