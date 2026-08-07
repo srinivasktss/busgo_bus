@@ -29,11 +29,48 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, tag, and push image
+        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          # Build once from the Dockerfile in the repo root
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+
+          # Alias the same built image under the "latest" tag (no rebuild)
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          # Push the SHA tag - this is the immutable, unique tag ECS will deploy
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          # Push "latest" too, purely for human/manual pulls - not used for deploys
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          # Expose the full SHA-tagged image URI to later steps in this job
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+      
+      - name: Fetch current task definition from ECS
+        id: fetch-task-def
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition busgo_bus_task \
+            --query 'taskDefinition' \
+            --output json \
+            | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            > task-definition.json   # written to the runner's temp workspace, not committed
+      
+      - name: Render new task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: Main
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: my-service
+          cluster: busgo_bus_task-service-08dz72tc
+          wait-for-service-stability: true
