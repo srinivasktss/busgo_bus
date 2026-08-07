@@ -71,6 +71,6 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          service: my-service
-          cluster: busgo_bus_task-service-08dz72tc
+          service: busgo_bus_task-service
+          cluster: busgo-cluster
           wait-for-service-stability: true
